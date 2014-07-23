@@ -140,7 +140,7 @@
 ;; #+end_src
 
 ;; Besides `puml-pack', another very important and versatile function
-;; is `puml-arrow'. In can be used to create all kinds of arrow syntax
+;; is `puml-arrow'. It can be used to create all kinds of arrow syntax
 ;; used by PlantUML.
 
 ;;  | arg     | meaning     | default |
@@ -214,6 +214,44 @@ Takes the following string arguments:
  1. Label
  2. Activities
  3. Activities")
+
+;;;;; Text Markup
+
+(defconst puml-size
+    "<size: %s>%s</size>"
+  "Plantuml size markup template for use with `format'.
+Takes the following string arguments:
+ 1. Size
+ 2. Text")
+
+(defconst puml-emph
+    "<%s>%s</%s>"
+  "Plantuml emphasis markup template for use with `format'.
+Takes the following string arguments:
+ 1. Emphasis type (b,u,i,...)
+ 2. Text
+ 3. Emphasis type (b,u,i,...)")
+
+(defconst puml-font
+    "<font %s=%s>%s</font>"
+  "Plantuml font markup template for use with `format'.
+Takes the following string arguments:
+ 1. Font property (e.g. color)
+ 2. Property values (e.g. \"#AAAAAA\" or \"colorName\")
+ 3. Text")
+
+(defconst puml-color
+    "<color:%s>%s</color>"
+  "Plantuml color markup template for use with `format'.
+Takes the following string arguments:
+ 1. Color (e.g. \"#AAAAAA\" or \"colorName\")
+ 2. Text")
+
+(defconst puml-image
+    "<img:%s>"
+  "Plantuml image markup template for use with `format'.
+Takes the following string arguments:
+ 1. Image file (accessible by filesystem)")
 
 ;;;;; Generic 
 
@@ -315,9 +353,8 @@ string that ends with a newline \n. If INS is non-nil, insert packed ARGS at poi
     (if ins (insert pack) pack)))
 
 (defun* puml-space (sym-or-strg &key (lead 0) (trail 0) ins)
-  "Return or insert STRING with LEADing and TRAIL spaces.
-With INS, insert results, otherwise return STRING surrounded by
-spaces."
+  "Return or insert SYM-OR-STRING with LEADing and TRAIL spaces.
+With INS, insert results, otherwise return them."
   (let ((strg1 (puml-sym-or-strg sym-or-strg)))
     (dotimes (i lead strg1)
       (setq strg1 (concat " " strg1)))
@@ -361,6 +398,46 @@ Otherwise return it as is. If optional argument AS-SYM-P is non-nil, return OBJ 
    ((puml-stringp obj) (if as-sym-p (intern obj) obj))
    ((symbolp obj) (if as-sym-p obj (symbol-name obj)))
    (t obj)))
+
+;;;;; Text Markup
+
+(defun* puml-size (sym-or-strg &key (size 12) ins)
+  "Return or insert SYM-OR-STRING wrapped in SIZE markup.
+With INS, insert results, otherwise return them."
+  (let* ((strg1 (puml-sym-or-strg sym-or-strg))
+	 (res (format puml-size size strg1)))
+    (if ins (insert res) res)))
+
+(defun* puml-emph (sym-or-strg &key (type "i") ins)
+  "Return or insert SYM-OR-STRING wrapped in emphasis markup.
+TYPE determines the type of emphasis. With INS, insert results,
+otherwise return them."
+  (let* ((strg1 (puml-sym-or-strg sym-or-strg))
+	 (res (format puml-emph type strg1 type)))
+    (if ins (insert res) res)))
+
+(defun* puml-font (sym-or-strg &key (attr "color") val ins)
+  "Return or insert SYM-OR-STRING wrapped in font (color) markup.
+With INS, insert results, otherwise return them. ATTR is the font
+attribute, VAL is its value."
+  (let* ((strg1 (puml-sym-or-strg sym-or-strg))
+	 (res (format puml-font attr val strg1)))
+    (if ins (insert res) res)))
+
+(defun* puml-color (sym-or-strg &key val ins)
+  "Return or insert SYM-OR-STRING wrapped in color markup.
+With INS, insert results, otherwise return them. VAL is the color
+to use."
+  (let* ((strg1 (puml-sym-or-strg sym-or-strg))
+	 (res (format puml-color val strg1)))
+    (if ins (insert res) res)))
+
+(defun* puml-img (file &key ins)
+  "Return or insert FILE wrapped in IMG markup.
+With INS, insert results, otherwise return them."
+  (let* ((strg1 (puml-sym-or-strg file))
+	 (res (format puml-image strg1)))
+    (if ins (insert res) res)))
 
 ;;;;; Common
 
@@ -464,6 +541,76 @@ To be inserted at top of diagram."
 				lbl))
 		 :crlf crlf
 		 :ins ins))
+
+(defun puml--header-or-footer (text type dir ml crlf ins)
+  "Return or insert PlantUML header or footer."
+  (puml--generic :typ 'generic-nospaces
+		 :pre (let ((dir-strg (when dir
+					(puml-sym-or-strg dir))))
+			(when (and
+			       dir-strg
+			       (member
+				dir-strg
+				(list "center" "left" "right")))
+			  (puml-space dir-strg :trail 1)))
+		 :1st (puml-pack
+		       (if ml
+			   (case type
+			     ('header "header\n")
+			     ('footer "footer\n")
+			     (t (error
+				 (concat 
+				  "Type %s not "
+				  "(memq '(header footer)).")
+				 type)))
+			 (case type
+			   ('header (puml-space "header" :trail 1))
+			   ('footer (puml-space "footer" :trail 1))
+			   (t (error
+			       (concat 
+				"Type %s not "
+				"(memq '(header footer)).")
+			       type)))))
+		 :2nd (if ml text (puml-quotes text))
+		 :3rd (when ml
+			(case type
+			  ('header "\nendheader")
+			  ('footer "\nendfooter")
+			  (t (error
+			      (concat 
+			       "Type %s not "
+			       "(memq '(header footer)).")
+			      type))))
+		 :crlf crlf
+		 :ins ins))
+
+(defun* puml-header (text &key dir ml (crlf "\n") ins)
+  "Return or insert PlantUML header or footer."
+  (puml--header-or-footer text 'header dir ml crlf ins))
+
+(defun* puml-footer (text &key dir ml (crlf "\n") ins)
+  "Return or insert PlantUML header or footer."
+  (puml--header-or-footer text 'footer dir ml crlf ins))
+
+(defun puml-rotate (&optional ins)
+  "Return or insert PlantUML rotate command."
+  (if ins (insert "rotate\n") "rotate\n"))
+
+(defun* puml-zoom (&key scl w h ins)
+  "Return or insert PlantUML scale command.
+W stands for width, H for hight, SCL is either a number or
+fraction like 1.5 or 2/3. H and W take precedence of SCL."
+  (let ((res (cond
+	      ((and w h)
+	       (format "scale %s*%s\n" w h))
+	      (w (format "scale %s width\n" w))
+	      (h (format "scale %s height\n" h))
+	      (t (if scl
+		     (format "scale %s" scl)
+		   (error
+		    "You need to specify scale parameters."))))))
+    (if ins (insert res) res)))
+
 
 ;;;;; Sequence Diagram
 ;;;;; Usecase Diagram
